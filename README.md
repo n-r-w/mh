@@ -20,11 +20,14 @@ BenchmarkMongoDBDecoding/Parallel-32                 208           5427981 ns/op
 ### Usage
 
 ```go
-import "github.com/n-r-w/mh"
+import (
+  "github.com/n-r-w/mh"
+  "go.mongodb.org/mongo-driver/mongo/options"
+)
 
 // docoding to slice
 var results []ComplexDocument
-err = mh.ParallelFind(ctx, mh.DefaultParallel, &results, nil, collection, bson.D{})
+err = mh.ParallelFind(ctx, mh.DefaultParallel, &results, nil, collection, bson.D{}, options.Find().SetBatchSize(100))
 
 // decoding to slice of pointers
 var resultsPtr []*ComplexDocument

@@ -9,6 +9,7 @@ import (
 	"github.com/n-r-w/testdock/v2"
 	"github.com/stretchr/testify/require"
 	"go.mongodb.org/mongo-driver/bson"
+	"go.mongodb.org/mongo-driver/mongo/options"
 )
 
 func TestParallelFind(t *testing.T) {
@@ -44,6 +45,7 @@ func TestParallelFind(t *testing.T) {
 			},
 			collection,
 			bson.D{{Key: "a", Value: 1}},
+			options.Find().SetBatchSize(100),
 		))
 		require.Len(t, res, docNum)
 
