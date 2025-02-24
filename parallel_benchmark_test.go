@@ -126,13 +126,14 @@ func generateComplexDocument(id string) ComplexDocument {
 	}
 }
 
+const benchDocNum = 1000
+
 func setupTestBenchmarkCollection(b *testing.B, db *mongo.Database) *mongo.Collection {
 	collection := db.Collection("benchmark_test")
 
 	// Insert test documents
-	const docNum = 1000
-	docs := make([]any, docNum)
-	for i := range docNum {
+	docs := make([]any, benchDocNum)
+	for i := range benchDocNum {
 		docs[i] = generateComplexDocument(fmt.Sprintf("doc_%d", i))
 	}
 
@@ -165,7 +166,7 @@ func BenchmarkMongoDBDecoding(b *testing.B) {
 		b.ResetTimer()
 		for range b.N {
 			var results []ComplexDocument
-			err := ParallelFind(ctx, DefaultParallel, &results, nil, collection, bson.D{})
+			err := ParallelFind(ctx, DefaultParallelDecode, 2, &results, nil, collection, bson.D{})
 			require.NoError(b, err)
 		}
 	})

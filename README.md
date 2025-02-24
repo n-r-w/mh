@@ -27,14 +27,14 @@ import (
 
 // docoding to slice
 var results []ComplexDocument
-err = mh.ParallelFind(ctx, mh.DefaultParallel, &results, nil, collection, bson.D{}, options.Find().SetBatchSize(100))
+err = mh.ParallelFind(ctx, mh.DefaultParallelDecode, 1, &results, nil, collection, bson.D{}, options.Find().SetBatchSize(100))
 
 // decoding to slice of pointers
 var resultsPtr []*ComplexDocument
-err = mh.ParallelFindPtr(ctx, mh.DefaultParallel, &resultsPtr, nil, collection, bson.D{})
+err = mh.ParallelFindPtr(ctx, mh.DefaultParallelDecode, 1, &resultsPtr, nil, collection, bson.D{})
 
 // decoding using function
-err = mh.ParallelFindFunc(ctx, mh.DefaultParallel, 
+err = mh.ParallelFindFunc(ctx, mh.DefaultParallelDecode, 1, 
   func(index int, value ComplexDocument) error {
     // data processing function
   }, 
@@ -42,4 +42,12 @@ err = mh.ParallelFindFunc(ctx, mh.DefaultParallel,
     // error processing function
   }
   , collection, bson.D{})
+
+// parallel decoding slice of bson.D with parallel limit of 2
+var filter []bson.D
+filter = append(filter, bson.D{{"a", 1}})
+filter = append(filter, bson.D{{"b", 2}})
+filter = append(filter, bson.D{{"c", 3}})
+var results []bson.D
+err = mh.ParallelFind(ctx, mh.DefaultParallelDecode, 2, &results, nil, collection, filter)
 ```

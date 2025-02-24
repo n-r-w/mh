@@ -38,8 +38,8 @@ func TestParallelFind(t *testing.T) {
 			KeyB *int `bson:"b"`
 		}
 
-		require.NoError(t, ParallelFind(ctx, 2, &res,
-			func(index int, err error) error {
+		require.NoError(t, ParallelFind(ctx, 2, 2, &res,
+			func(err error) error {
 				t.Fail()
 				return nil
 			},
@@ -50,7 +50,7 @@ func TestParallelFind(t *testing.T) {
 		require.Len(t, res, docNum)
 
 		res = res[:0]
-		require.NoError(t, ParallelFind(ctx, 100, &res, nil,
+		require.NoError(t, ParallelFind(ctx, 2, 2, &res, nil,
 			collection,
 			bson.D{{Key: "b", Value: 2}},
 		))
@@ -67,8 +67,8 @@ func TestParallelFind(t *testing.T) {
 
 		var errCount atomic.Int32
 
-		require.NoError(t, ParallelFind(ctx, 2, &res,
-			func(index int, err error) error {
+		require.NoError(t, ParallelFind(ctx, 2, 2, &res,
+			func(err error) error {
 				errCount.Add(1)
 				return nil
 			},
@@ -87,8 +87,8 @@ func TestParallelFind(t *testing.T) {
 			KeyB *int `bson:"b"`
 		}
 
-		require.NoError(t, ParallelFindPtr(ctx, 2, &res,
-			func(index int, err error) error {
+		require.NoError(t, ParallelFindPtr(ctx, 2, 2, &res,
+			func(err error) error {
 				t.Fail()
 				return nil
 			},
@@ -98,7 +98,7 @@ func TestParallelFind(t *testing.T) {
 		require.Len(t, res, docNum)
 
 		res = res[:0]
-		require.NoError(t, ParallelFindPtr(ctx, 100, &res, nil,
+		require.NoError(t, ParallelFindPtr(ctx, 2, 2, &res, nil,
 			collection,
 			bson.D{{Key: "b", Value: 2}},
 		))
@@ -115,8 +115,8 @@ func TestParallelFind(t *testing.T) {
 
 		var errCount atomic.Int32
 
-		require.NoError(t, ParallelFindPtr(ctx, 2, &res,
-			func(index int, err error) error {
+		require.NoError(t, ParallelFindPtr(ctx, 2, 2, &res,
+			func(err error) error {
 				errCount.Add(1)
 				return nil
 			},
@@ -125,6 +125,29 @@ func TestParallelFind(t *testing.T) {
 		))
 		require.Empty(t, res)
 		require.Equal(t, int32(docNum), errCount.Load())
+	})
+
+	t.Run("ParallelFind chunk", func(t *testing.T) {
+		t.Parallel()
+
+		var res []struct {
+			KeyA *int `bson:"a"`
+			KeyB *int `bson:"b"`
+		}
+
+		require.NoError(t, ParallelFind(ctx, 2, 2, &res,
+			func(err error) error {
+				t.Fail()
+				return nil
+			},
+			collection,
+			[]bson.D{
+				{{Key: "a", Value: 1}},
+				{{Key: "b", Value: 2}},
+			},
+			options.Find().SetBatchSize(100),
+		))
+		require.Len(t, res, docNum+1)
 	})
 }
 
@@ -159,8 +182,8 @@ func TestBigDocument(t *testing.T) {
 		Value []byte `bson:"a"`
 	}
 
-	require.NoError(t, ParallelFind(ctx, 2, &res,
-		func(index int, err error) error {
+	require.NoError(t, ParallelFind(ctx, 2, 2, &res,
+		func(err error) error {
 			t.Fail()
 			return nil
 		},

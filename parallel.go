@@ -17,26 +17,31 @@ type Finder interface {
 	Find(ctx context.Context, filter any, opts ...*options.FindOptions) (cur *mongo.Cursor, err error)
 }
 
-// DefaultParallel - the default maximum number of parallel operations.
+// DefaultParallelDecode - the default maximum number of parallel operations for decoding.
 // It makes sense to set the maximum number of parallel operations based
 // on the Find batch size, which defaults to 101 documents.
 // https://www.mongodb.com/docs/v5.0/reference/method/cursor.batchSize/
-const DefaultParallel = 101
+const DefaultParallelDecode = 101
 
 // ParallelFind performs a search and parallel processing of mongo results.
 // The result is a non-sorted slice of values.
+// limitDecode - maximum number of parallel operations for decoding.
+// limitParallel - maximum number of parallel operations for the search.
 // fError - error handling function. If nil is returned, the error is ignored. Can be nil.
+// filter - bson.D or []bson.D.
 func ParallelFind[T any](
-	ctx context.Context, limit int,
+	ctx context.Context,
+	limitDecode, limitParallel int,
 	res *[]T,
-	fError func(index int, err error) error,
+	fError func(err error) error,
 	finder Finder,
 	filter any,
 	opts ...*options.FindOptions,
 ) (err error) {
-	if err = parallelFindHelper(ctx, limit, func(value T) {
-		*res = append(*res, value)
-	}, fError, finder, filter, opts...); err != nil {
+	if err = parallelFindHelper(ctx, limitDecode, limitParallel,
+		func(value T) {
+			*res = append(*res, value)
+		}, fError, finder, filter, opts...); err != nil {
 		return fmt.Errorf("parallel find: %w", err)
 	}
 
@@ -45,38 +50,47 @@ func ParallelFind[T any](
 
 // ParallelFindPtr performs a search and parallel processing of mongo results.
 // The result is a non-sorted slice of pointers.
+// limitDecode - maximum number of parallel operations for decoding.
+// limitParallel - maximum number of parallel operations for the search.
 // fError - error handling function. If nil is returned, the error is ignored. Can be nil.
+// filter - bson.D or []bson.D.
 // WARNING: If this function is used, it is likely necessary to get rid of pointers
 // and use ParallelFind instead.
 func ParallelFindPtr[T any](
-	ctx context.Context, limit int,
+	ctx context.Context,
+	limitDecode, limitParallel int,
 	res *[]*T,
-	fError func(index int, err error) error,
+	fError func(err error) error,
 	finder Finder,
 	filter any,
 	opts ...*options.FindOptions,
 ) (err error) {
-	if err = parallelFindHelper(ctx, limit, func(value T) {
-		*res = append(*res, &value)
-	}, fError, finder, filter, opts...); err != nil {
+	if err = parallelFindHelper(ctx, limitDecode, limitParallel,
+		func(value T) {
+			*res = append(*res, &value)
+		}, fError, finder, filter, opts...); err != nil {
 		return fmt.Errorf("parallel find ptr: %w", err)
 	}
 
 	return nil
 }
 
-func parallelFindHelper[T any](ctx context.Context, limit int,
+func parallelFindHelper[T any](ctx context.Context,
+	limitDecode, limitParallel int,
 	fAdd func(value T),
-	fError func(index int, err error) error,
+	fError func(err error) error,
 	finder Finder,
 	filter any,
 	opts ...*options.FindOptions,
 ) (err error) {
-	if limit <= 0 {
-		limit = DefaultParallel
+	if limitDecode <= 0 {
+		return errors.New("limitDecode must be greater than 0")
+	}
+	if limitParallel <= 0 {
+		return errors.New("limitParallel must be greater than 0")
 	}
 
-	resChan := make(chan T, limit)
+	resChan := make(chan T, limitDecode)
 	var wg sync.WaitGroup
 	wg.Add(2) //nolint:mnd // 2 goroutines
 
@@ -91,14 +105,15 @@ func parallelFindHelper[T any](ctx context.Context, limit int,
 		defer wg.Done()
 		defer close(resChan)
 
-		err = ParallelFindFunc(ctx, limit, func(_ int, value T) error {
-			select {
-			case resChan <- value:
-				return nil
-			case <-ctx.Done():
-				return ctx.Err()
-			}
-		}, fError, finder, filter, opts...)
+		err = ParallelFindFunc(ctx, limitDecode, limitParallel,
+			func(value T) error {
+				select {
+				case resChan <- value:
+					return nil
+				case <-ctx.Done():
+					return ctx.Err()
+				}
+			}, fError, finder, filter, opts...)
 	}()
 
 	wg.Wait()
@@ -111,22 +126,51 @@ func parallelFindHelper[T any](ctx context.Context, limit int,
 }
 
 // ParallelFindFunc performs a search and parallel processing of mongo results using a function.
+// limitDecode - maximum number of parallel operations for decoding.
+// limitParallel - maximum number of parallel operations for the search.
 // fAdd - function to add to the result.
 // fError - error handling function. If nil is returned, the error is ignored. Can be nil.
+// filter - bson.D or []bson.D.
 func ParallelFindFunc[T any](
-	ctx context.Context, limit int,
-	fAdd func(index int, value T) error,
-	fError func(index int, err error) error,
+	ctx context.Context,
+	limitDecode, limitParallel int,
+	fAdd func(value T) error,
+	fError func(err error) error,
 	finder Finder,
 	filter any,
 	opts ...*options.FindOptions,
 ) (err error) {
-	cur, err := finder.Find(ctx, filter, opts...)
-	if err != nil {
+	// if filter contains []bson.D - use parallel query
+	filters, ok := filter.([]bson.D)
+	if !ok {
+		// single bson.D
+		cur, err := finder.Find(ctx, filter, opts...)
+		if err != nil {
+			return fmt.Errorf("parallel find func: %w", err)
+		}
+
+		return ParallelDecode(ctx, cur, limitDecode, fAdd, fError)
+	}
+
+	errGroup, errCtx := errgroup.WithContext(ctx)
+	errGroup.SetLimit(limitParallel)
+
+	for _, f := range filters {
+		errGroup.Go(func() error {
+			cur, err := finder.Find(errCtx, f, opts...)
+			if err != nil {
+				return fmt.Errorf("parallel find func: %w", err)
+			}
+
+			return ParallelDecode(errCtx, cur, limitDecode, fAdd, fError)
+		})
+	}
+
+	if err := errGroup.Wait(); err != nil {
 		return fmt.Errorf("parallel find func: %w", err)
 	}
 
-	return ParallelDecode(ctx, cur, limit, fAdd, fError)
+	return nil
 }
 
 // ParallelDecode performs parallel processing of mongo cursor elements and closes it.
@@ -135,29 +179,23 @@ func ParallelFindFunc[T any](
 func ParallelDecode[T any](
 	ctx context.Context,
 	cur *mongo.Cursor,
-	limit int,
-	fAdd func(index int, value T) error,
-	fError func(index int, err error) error,
+	limitDecode int,
+	fAdd func(value T) error,
+	fError func(err error) error,
 ) (err error) {
-	if limit <= 0 {
-		limit = DefaultParallel
+	if limitDecode <= 0 {
+		limitDecode = DefaultParallelDecode
 	}
 
 	defer func() {
 		err = errors.Join(err, cur.Close(ctx))
 	}()
 
-	var (
-		errGroup errgroup.Group
-		index    int
-	)
-	errGroup.SetLimit(limit)
+	var errGroup errgroup.Group
+	errGroup.SetLimit(limitDecode)
 
 	for cur.Next(ctx) {
-		var (
-			indexGroup = index
-			buf        *[]byte
-		)
+		var buf *[]byte
 
 		if len(cur.Current) <= maxBufferSize {
 			buf, _ = bufferPool.Get().(*[]byte)
@@ -184,17 +222,15 @@ func ParallelDecode[T any](
 				if fError == nil {
 					return fmt.Errorf("parallel decode unmarshal: %w", errBson)
 				}
-				return fError(indexGroup, errBson)
+				return fError(errBson)
 			}
 
-			if errAdd := fAdd(indexGroup, value); errAdd != nil {
+			if errAdd := fAdd(value); errAdd != nil {
 				return errAdd
 			}
 
 			return nil
 		})
-
-		index++
 	}
 
 	if err = errGroup.Wait(); err != nil {
