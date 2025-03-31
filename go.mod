@@ -1,12 +1,11 @@
 module github.com/n-r-w/mh
 
 go 1.23.6
-
 require (
 	github.com/google/uuid v1.6.0
-	github.com/n-r-w/testdock/v2 v2.2.1
+	github.com/n-r-w/testdock/v2 v2.2.2
 	github.com/stretchr/testify v1.10.0
-	go.mongodb.org/mongo-driver v1.17.2
+	go.mongodb.org/mongo-driver v1.17.3
 	golang.org/x/sync v0.11.0
 )
 
@@ -26,7 +25,7 @@ require (
 	github.com/docker/go-units v0.5.0 // indirect
 	github.com/go-logr/logr v1.4.2 // indirect
 	github.com/go-logr/stdr v1.2.2 // indirect
-	github.com/go-sql-driver/mysql v1.8.1 // indirect
+	github.com/go-sql-driver/mysql v1.9.1 // indirect
 	github.com/gogo/protobuf v1.3.2 // indirect
 	github.com/golang-migrate/migrate/v4 v4.18.2 // indirect
 	github.com/golang/snappy v0.0.4 // indirect
@@ -35,7 +34,7 @@ require (
 	github.com/hashicorp/go-multierror v1.1.1 // indirect
 	github.com/jackc/pgpassfile v1.0.0 // indirect
 	github.com/jackc/pgservicefile v0.0.0-20240606120523-5a60cdf6a761 // indirect
-	github.com/jackc/pgx/v5 v5.7.2 // indirect
+	github.com/jackc/pgx/v5 v5.7.4 // indirect
 	github.com/jackc/puddle/v2 v2.2.2 // indirect
 	github.com/klauspost/compress v1.17.7 // indirect
 	github.com/lib/pq v1.10.9 // indirect
